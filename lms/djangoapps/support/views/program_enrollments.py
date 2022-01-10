@@ -245,7 +245,7 @@ class SAMLProvidersWithOrg(APIView):
 
         return [saml_provider.organization.short_name for saml_provider in saml_providers]
 
-    
+
 class ProgramEnrollmentsInspectorView(ProgramEnrollmentInspector, View):
     """
     The view to search and display the program enrollments

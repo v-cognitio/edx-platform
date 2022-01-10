@@ -11,6 +11,7 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import ddt
+from consent.models import DataSharingConsent
 from django.conf import settings
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from django.db.models import signals
@@ -53,6 +54,16 @@ from lms.djangoapps.verify_student.tests.factories import SSOVerificationFactory
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.features.content_type_gating.models import ContentTypeGatingConfig
 from openedx.features.course_duration_limits.models import CourseDurationLimitConfig
+from openedx.features.enterprise_support.api import enterprise_is_enabled
+from openedx.features.enterprise_support.tests.factories import (
+    EnterpriseCourseEnrollmentFactory,
+    EnterpriseCustomerUserFactory
+)
+
+try:
+    from consent.models import DataSharingConsent
+except ImportError:  # pragma: no cover
+    pass
 
 
 class SupportViewTestCase(ModuleStoreTestCase):
@@ -315,6 +326,40 @@ class SupportViewEnrollmentsTests(SharedModuleStoreTestCase, SupportViewTestCase
         }, data[0])
         assert {CourseMode.VERIFIED, CourseMode.AUDIT, CourseMode.HONOR, CourseMode.NO_ID_PROFESSIONAL_MODE,
                 CourseMode.PROFESSIONAL, CourseMode.CREDIT_MODE} == {mode['slug'] for mode in data[0]['course_modes']}
+        assert 'enterprise_course_enrollments' not in data[0]
+
+    @enterprise_is_enabled()
+    @override_settings(FEATURES=dict(ENABLE_ENTERPRISE_INTEGRATION=True))
+    def test_get_enrollments_enterprise_enabled(self):
+        url = reverse(
+            'support:enrollment_list',
+            kwargs={'username_or_email': self.student.username}
+        )
+
+        enterprise_customer_user = EnterpriseCustomerUserFactory(
+            user_id=self.student.id
+        )
+        enterprise_course_enrollment = EnterpriseCourseEnrollmentFactory(
+            course_id=self.course.id,
+            enterprise_customer_user=enterprise_customer_user
+        )
+        data_sharing_consent = DataSharingConsent(
+            course_id=self.course.id,
+            enterprise_customer=enterprise_customer_user.enterprise_customer,
+            username=self.student.username,
+            granted=True
+        )
+        data_sharing_consent.save()
+
+        response = self.client.get(url)
+        assert response.status_code == 200
+        data = json.loads(response.content.decode('utf-8'))
+        assert len(data) == 1
+
+        enterprise_course_enrollments = data[0]['enterprise_course_enrollments']
+        assert len(enterprise_course_enrollments) == 1
+        assert enterprise_course_enrollments[0]['id'] == enterprise_course_enrollment.id
+        assert enterprise_course_enrollments[0]['data_sharing_consent']['id'] == data_sharing_consent.id
 
     @ddt.data(
         (True, 'Self Paced'),

@@ -18,7 +18,7 @@ import json  # lint-amnesty, pylint: disable=wrong-import-order
 import logging  # lint-amnesty, pylint: disable=wrong-import-order
 import uuid  # lint-amnesty, pylint: disable=wrong-import-order
 from collections import defaultdict, namedtuple  # lint-amnesty, pylint: disable=wrong-import-order
-from datetime import datetime, timedelta  # lint-amnesty, pylint: disable=wrong-import-order
+from datetime import date, datetime, timedelta  # lint-amnesty, pylint: disable=wrong-import-order
 from functools import total_ordering  # lint-amnesty, pylint: disable=wrong-import-order
 from importlib import import_module  # lint-amnesty, pylint: disable=wrong-import-order
 from urllib.parse import urlencode  # lint-amnesty, pylint: disable=wrong-import-order
@@ -3445,11 +3445,13 @@ class CourseEnrollmentCelebration(TimeStampedModel):
     """
     enrollment = models.OneToOneField(CourseEnrollment, models.CASCADE, related_name='celebration')
     celebrate_first_section = models.BooleanField(default=False)
+    celebrate_weekly_goal = models.BooleanField(default=False)
 
     def __str__(self):
         return (
-            '[CourseEnrollmentCelebration] course: {}; user: {}; first_section: {};'
-        ).format(self.enrollment.course.id, self.enrollment.user.username, self.celebrate_first_section)
+            '[CourseEnrollmentCelebration] course: {}; user: {}; first_section: {}; weekly_goal: {}'
+        ).format(self.enrollment.course.id, self.enrollment.user.username, self.celebrate_first_section,
+                 self.celebrate_weekly_goal)
 
     @staticmethod
     def should_celebrate_first_section(enrollment):
@@ -3459,6 +3461,27 @@ class CourseEnrollmentCelebration(TimeStampedModel):
         try:
             return enrollment.celebration.celebrate_first_section
         except CourseEnrollmentCelebration.DoesNotExist:
+            return False
+
+    @staticmethod
+    def should_celebrate_weekly_goal(enrollment):
+        """ Returns the celebration value for weekly_goal with appropriate fallback if it doesn't exist """
+        if not enrollment:
+            return False
+        try:
+            if enrollment.celebration.celebrate_weekly_goal:
+                # Avoiding circular import
+                from lms.djangoapps.course_goals.models import CourseGoal, UserActivity
+                goal = CourseGoal.objects.get(user=enrollment.user, course_key=enrollment.course.id)
+                today = date.today()
+                monday_date = today - timedelta(days=today.weekday())
+                week_activity_count = UserActivity.objects.filter(
+                    user=enrollment.user, course_key=enrollment.course.id, date__gte=monday_date,
+                ).count()
+                # days_per_week defaults to 0 and we don't want that to sneak in
+                return goal.days_per_week and week_activity_count == goal.days_per_week
+            return False
+        except (CourseEnrollmentCelebration.DoesNotExist, CourseGoal.DoesNotExist):
             return False
 
 

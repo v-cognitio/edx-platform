@@ -731,6 +731,7 @@ class Celebration(DeveloperErrorViewMixin, APIView):
 
         data = dict(request.data)
         first_section = data.pop('first_section', None)
+        weekly_goal = data.pop('weekly_goal', None)
         if data:
             return Response(status=400)  # there were parameters we didn't recognize
 
@@ -741,6 +742,8 @@ class Celebration(DeveloperErrorViewMixin, APIView):
         defaults = {}
         if first_section is not None:
             defaults['celebrate_first_section'] = first_section
+        if weekly_goal is not None:
+            defaults['celebrate_weekly_goal'] = weekly_goal
 
         if defaults:
             _, created = CourseEnrollmentCelebration.objects.update_or_create(enrollment=enrollment, defaults=defaults)
